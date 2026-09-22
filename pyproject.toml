@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ashare-multifactor"
+version = "0.1.0"
+description = "A-share low-frequency multifactor research and backtesting"
+requires-python = ">=3.9"
+dependencies = [
+  "pandas>=1.5,<3",
+  "tushare>=1.4.0,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7,<9",
+  "ruff>=0.6,<1",
+]
+
+[project.scripts]
+fetch-tushare-demo = "ashare_multifactor.data.tushare_demo:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
