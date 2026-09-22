@@ -37,7 +37,7 @@ daily_prices.csv
 manifest.json
 ```
 
-`daily_prices.csv` 中的 `security_name` 来自同一次运行拉取的证券基础信息，并按标准股票代码在中间层关联；`security_master.csv` 同时保留名称、上市日期、退市日期、证券类型和上市状态。
+`daily_prices.csv` 的前三列固定为 `symbol, security_name, trade_date`，便于打开文件后立即核对代码、中文名称和日期。`security_name` 来自同一次运行拉取的证券基础信息，并按标准股票代码在中间层关联；`security_master.csv` 同时保留名称、上市日期、退市日期、证券类型和上市状态。
 
 默认使用不复权价格。因子研究可以明确传入 `--adjustment forward` 或 `--adjustment backward`，但模拟成交和账户估值必须继续使用不复权价格。
 

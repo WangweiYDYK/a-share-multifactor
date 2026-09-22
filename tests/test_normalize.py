@@ -96,7 +96,7 @@ class CanonicalDataServiceTest(unittest.TestCase):
         result = self.service.enrich_daily_prices(daily, master)
 
         self.assertEqual(result.rows[0]["security_name"], "浦发银行")
-        self.assertEqual(list(result.rows[0])[:3], ["trade_date", "symbol", "security_name"])
+        self.assertEqual(list(result.rows[0])[:3], ["symbol", "security_name", "trade_date"])
 
     def test_rejects_duplicate_primary_keys(self):
         row = {"calendar_date": "2026-09-21", "is_trading_day": "1"}
