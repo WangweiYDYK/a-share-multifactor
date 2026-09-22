@@ -117,8 +117,8 @@ class CanonicalDataService:
             trade_date = str(row["date"])
             rows.append(
                 {
-                    "symbol": _canonical_symbol(str(row["code"])),
                     "trade_date": trade_date,
+                    "symbol": _canonical_symbol(str(row["code"])),
                     "open": _to_float(row.get("open")),
                     "high": _to_float(row.get("high")),
                     "low": _to_float(row.get("low")),
