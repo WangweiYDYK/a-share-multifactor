@@ -23,12 +23,49 @@ class CanonicalDataService:
     def normalize(self, raw: RawDataset) -> CanonicalDataset:
         handlers: dict[str, Callable[[RawDataset], CanonicalDataset]] = {
             "trade_calendar": self._trade_calendar,
+            "security_master": self._security_master,
             "daily_prices": self._daily_prices,
         }
         try:
             dataset = handlers[raw.name](raw)
         except KeyError as exc:
             raise ValueError(f"No canonical mapping for dataset {raw.name!r}") from exc
+        _validate(dataset)
+        return dataset
+
+    def enrich_daily_prices(
+        self,
+        daily_prices: CanonicalDataset,
+        security_master: CanonicalDataset,
+    ) -> CanonicalDataset:
+        """Add provider-sourced names without leaking provider fields downstream."""
+        if daily_prices.name != "daily_prices" or security_master.name != "security_master":
+            raise ValueError("Expected daily_prices and security_master datasets.")
+
+        names = {str(row["symbol"]): str(row["security_name"]) for row in security_master.rows}
+        missing = sorted({str(row["symbol"]) for row in daily_prices.rows} - names.keys())
+        if missing:
+            raise DataQualityError(f"Security names are missing for symbols: {missing}")
+
+        rows = []
+        for row in daily_prices.rows:
+            enriched = {}
+            for column, value in row.items():
+                enriched[column] = value
+                if column == "symbol":
+                    enriched["security_name"] = names[str(value)]
+            rows.append(enriched)
+
+        dataset = CanonicalDataset(
+            name=daily_prices.name,
+            primary_key=daily_prices.primary_key,
+            rows=rows,
+            metadata={
+                **daily_prices.metadata,
+                "security_master_source": security_master.rows[0]["source"],
+                "security_master_source_version": security_master.rows[0]["source_version"],
+            },
+        )
         _validate(dataset)
         return dataset
 
@@ -47,6 +84,29 @@ class CanonicalDataService:
         return CanonicalDataset(
             name="trade_calendar",
             primary_key=("trade_date",),
+            rows=rows,
+            metadata=raw.metadata,
+        )
+
+    def _security_master(self, raw: RawDataset) -> CanonicalDataset:
+        rows = [
+            {
+                "symbol": _canonical_symbol(str(row["code"])),
+                "security_name": str(row["code_name"]),
+                "list_date": _empty_to_none(row.get("ipoDate")),
+                "delist_date": _empty_to_none(row.get("outDate")),
+                "security_type": _to_int(row.get("type")),
+                "list_status": _to_int(row.get("status")),
+                "source": raw.source,
+                "source_version": raw.source_version,
+                "retrieved_at": raw.retrieved_at,
+                "available_at": raw.retrieved_at,
+            }
+            for row in raw.rows
+        ]
+        return CanonicalDataset(
+            name="security_master",
+            primary_key=("symbol",),
             rows=rows,
             metadata=raw.metadata,
         )
@@ -112,6 +172,10 @@ def _validate(dataset: CanonicalDataset) -> None:
                     raise DataQualityError(
                         f"daily_prices has invalid {column}={value!r} for {row['symbol']}"
                     )
+    if dataset.name == "security_master":
+        missing_names = [row["symbol"] for row in dataset.rows if not row.get("security_name")]
+        if missing_names:
+            raise DataQualityError(f"Security names are missing for symbols: {missing_names}")
 
 
 def _canonical_symbol(value: str) -> str:
@@ -138,3 +202,9 @@ def _to_int(value: Any) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def _empty_to_none(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    return str(value)

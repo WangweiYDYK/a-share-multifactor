@@ -71,6 +71,21 @@ class BaoStockProvider:
             metadata={"start_date": start_date, "end_date": end_date},
         )
 
+    def fetch_security_master(self, symbols: Sequence[str]) -> RawDataset:
+        self._require_login()
+        rows = []
+        for symbol in symbols:
+            result = self._client.query_stock_basic(code=_to_baostock_symbol(symbol))
+            rows.extend(_read_result(result, f"security master for {symbol}"))
+        return RawDataset(
+            name="security_master",
+            source=self.source,
+            source_version=self.source_version,
+            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            rows=rows,
+            metadata={"symbols": list(symbols)},
+        )
+
     def fetch_daily(
         self,
         symbols: Sequence[str],

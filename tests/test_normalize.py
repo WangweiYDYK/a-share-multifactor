@@ -49,6 +49,55 @@ class CanonicalDataServiceTest(unittest.TestCase):
             "project_convention_eod_18_00_asia_shanghai",
         )
 
+    def test_enriches_daily_prices_with_security_name(self):
+        daily = self.service.normalize(
+            RawDataset(
+                name="daily_prices",
+                source="baostock",
+                source_version="test",
+                retrieved_at="2026-09-22T08:00:00+00:00",
+                rows=[
+                    {
+                        "date": "2026-09-21",
+                        "code": "sh.600000",
+                        "open": "10",
+                        "high": "10",
+                        "low": "10",
+                        "close": "10",
+                        "preclose": "10",
+                        "volume": "1",
+                        "amount": "10",
+                        "adjustflag": "3",
+                        "tradestatus": "1",
+                        "isST": "0",
+                    }
+                ],
+            )
+        )
+        master = self.service.normalize(
+            RawDataset(
+                name="security_master",
+                source="baostock",
+                source_version="test",
+                retrieved_at="2026-09-22T08:00:00+00:00",
+                rows=[
+                    {
+                        "code": "sh.600000",
+                        "code_name": "浦发银行",
+                        "ipoDate": "1999-11-10",
+                        "outDate": "",
+                        "type": "1",
+                        "status": "1",
+                    }
+                ],
+            )
+        )
+
+        result = self.service.enrich_daily_prices(daily, master)
+
+        self.assertEqual(result.rows[0]["security_name"], "浦发银行")
+        self.assertEqual(list(result.rows[0])[:3], ["trade_date", "symbol", "security_name"])
+
     def test_rejects_duplicate_primary_keys(self):
         row = {"calendar_date": "2026-09-21", "is_trading_day": "1"}
         raw = RawDataset(

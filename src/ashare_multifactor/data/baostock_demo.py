@@ -47,9 +47,15 @@ def run(
     normalizer = CanonicalDataService()
     with BaoStockProvider() as provider:
         raw_calendar = provider.fetch_trade_calendar(start_date, end_date)
+        raw_security_master = provider.fetch_security_master(symbols)
         raw_daily = provider.fetch_daily(symbols, start_date, end_date, adjustment)
 
-    datasets = [normalizer.normalize(raw_calendar), normalizer.normalize(raw_daily)]
+    security_master = normalizer.normalize(raw_security_master)
+    daily_prices = normalizer.enrich_daily_prices(
+        normalizer.normalize(raw_daily),
+        security_master,
+    )
+    datasets = [normalizer.normalize(raw_calendar), security_master, daily_prices]
     return write_datasets(output_dir, datasets)
 
 
