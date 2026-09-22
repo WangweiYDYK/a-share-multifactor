@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A-share low-frequency multifactor research and backtesting"
 requires-python = ">=3.9"
 dependencies = [
+  "baostock>=0.9.4,<1",
   "pandas>=1.5,<3",
   "tushare>=1.4.0,<2",
 ]
@@ -19,6 +20,7 @@ dev = [
 ]
 
 [project.scripts]
+fetch-baostock-demo = "ashare_multifactor.data.baostock_demo:main"
 fetch-tushare-demo = "ashare_multifactor.data.tushare_demo:main"
 
 [tool.setuptools.packages.find]
@@ -33,4 +35,3 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
