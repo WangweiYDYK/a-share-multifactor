@@ -1,0 +1,59 @@
+# Local reference bundle
+/tqsdk-trading-and-data/
+/tqsdk-trading-and-data.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Project data and generated artifacts
+data/raw/
+data/normalized/
+data/derived/
+data/cache/
+reports/
+artifacts/
+outputs/
+*.csv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.tmp
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+auth.json
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Archives and downloads
+downloads/
+*.zip
+*.tar.gz
