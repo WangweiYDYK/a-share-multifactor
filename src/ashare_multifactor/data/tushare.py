@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
@@ -33,7 +34,7 @@ class FetchResult:
 
 def create_client(token: str | None = None) -> Any:
     """Create an authenticated Tushare Pro client without persisting the token."""
-    resolved_token = token or os.environ.get("TUSHARE_TOKEN")
+    resolved_token = token or os.environ.get("TUSHARE_TOKEN") or _read_local_token()
     if not resolved_token:
         raise TushareConfigurationError(
             "TUSHARE_TOKEN is not set. Set it in the environment before running the demo."
@@ -47,6 +48,21 @@ def create_client(token: str | None = None) -> Any:
         ) from exc
 
     return ts.pro_api(resolved_token)
+
+
+def _read_local_token(path: Path = Path(".env")) -> str | None:
+    """Read only TUSHARE_TOKEN from a local ignored dotenv file."""
+    if not path.is_file():
+        return None
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == "TUSHARE_TOKEN":
+            return value.strip().strip("\"'") or None
+    return None
 
 
 def fetch_trade_calendar(client: Any, start_date: str, end_date: str) -> pd.DataFrame:
@@ -155,4 +171,3 @@ def _compact_date(value: str) -> str:
         return datetime.strptime(value, "%Y-%m-%d").strftime("%Y%m%d")
     except ValueError as exc:
         raise ValueError(f"Invalid date {value!r}; expected YYYY-MM-DD.") from exc
-

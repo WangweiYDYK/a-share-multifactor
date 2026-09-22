@@ -17,7 +17,13 @@ python -m venv .venv
 python -m pip install -e .
 ```
 
-在当前 PowerShell 会话设置 Token，然后选择一个已经收盘且为交易日的日期：
+将 `.env.example` 复制为不会提交的 `.env`，填入 Token：
+
+```text
+TUSHARE_TOKEN=你的_Tushare_Pro_Token
+```
+
+也可以在当前 PowerShell 会话设置 Token。然后选择一个已经收盘且为交易日的日期：
 
 ```powershell
 $env:TUSHARE_TOKEN = "你的_Tushare_Pro_Token"
@@ -40,4 +46,3 @@ data/raw/tushare_demo/manifest.json
 ```
 
 `daily.available_at` 暂按当日 15:30（Asia/Shanghai）处理，方便演示日线时间约束；这不是 Tushare 提供的精确发布时间。财务数据以后必须使用公告日或首次可见时间，不能沿用这个约定。
-
