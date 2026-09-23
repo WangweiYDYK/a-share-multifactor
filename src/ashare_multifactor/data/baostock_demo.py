@@ -10,15 +10,15 @@ from typing import Sequence
 
 from ashare_multifactor.data.normalize import CanonicalDataService
 from ashare_multifactor.data.providers.baostock import BaoStockProvider
-from ashare_multifactor.data.storage import write_datasets
+from ashare_multifactor.data.storage import write_snapshot
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_OUTPUT = Path("data/normalized/baostock_demo")
+DEFAULT_SNAPSHOT_ROOT = Path("data/normalized/snapshots")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fetch free BaoStock data and normalize it to project schemas."
+        description="Fetch free BaoStock data and normalize it to project snapshots."
     )
     parser.add_argument("--start-date", default=(date.today() - timedelta(days=14)).isoformat())
     parser.add_argument("--end-date", default=date.today().isoformat())
@@ -33,7 +33,14 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("none", "forward", "backward"),
         default="none",
     )
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--snapshot-root",
+        "--output-dir",
+        dest="snapshot_root",
+        type=Path,
+        default=DEFAULT_SNAPSHOT_ROOT,
+        help="Ignored local root directory for immutable snapshots.",
+    )
     return parser
 
 
@@ -42,7 +49,7 @@ def run(
     end_date: str,
     symbols: Sequence[str],
     adjustment: str,
-    output_dir: Path,
+    snapshot_root: Path,
 ) -> Path:
     normalizer = CanonicalDataService()
     with BaoStockProvider() as provider:
@@ -56,7 +63,7 @@ def run(
         security_master,
     )
     datasets = [normalizer.normalize(raw_calendar), security_master, daily_prices]
-    return write_datasets(output_dir, datasets)
+    return write_snapshot(snapshot_root, datasets, as_of=end_date)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -68,12 +75,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.end_date,
             args.symbols,
             args.adjustment,
-            args.output_dir,
+            args.snapshot_root,
         )
     except Exception as exc:
         LOGGER.error("BaoStock demo failed: %s", exc)
         return 1
-    LOGGER.info("Saved canonical BaoStock sample; manifest: %s", manifest)
+    LOGGER.info("Saved canonical BaoStock snapshot; manifest: %s", manifest)
     return 0
 
 
