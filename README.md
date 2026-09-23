@@ -155,6 +155,48 @@ monthly_evaluation.csv     逐月 IC、换手与标签可用时间
 python -m unittest discover -s tests -p test_backtest_engine.py -v
 ```
 
+## 月度参考买入清单
+
+只输出值得买入的参考名单，不做自动下单，也不接管订单状态机。它复用回测同一套
+因子、预处理、合成与组合约束，从一个标准快照出发，只用决策日当时可见的数据打分：
+
+~~~text
+run-monthly-picks --as-of 2024-07-31 --top-n 20
+~~~
+
+没有真实快照时，先用离线合成夹具跑通流程：
+
+~~~text
+python -m ashare_multifactor.picks.cli --synthetic --as-of 2024-07-31
+~~~
+
+运行时可以用 `--snapshot-root` 指定快照根目录，用 `--snapshot-id` 固定某一个快照。
+每次运行写 `artifacts/picks/决策日-UTC时间戳/`：
+
+~~~text
+picks.csv        排名、代码、名称、行业、综合分、参考权重、近期收益与波动、成交额
+exclusions.csv   未入选股票及原因
+picks.md         可以直接打开阅读的清单
+manifest.json    版本、参数、筛选覆盖情况、来源与限制
+~~~
+
+筛选能跑的就跑，跑不了的会在 `manifest.json` 的 `screens` 里显式写成
+`skipped`，不会把缺失数据当成通过。必需数据只有交易日历、证券基础信息和日线行情
+（`daily_prices` 需要同时包含不复权与后复权两套价格）；缺少 `daily_basic`、
+`security_status`、`industry_membership` 时，市值展示、ST 与停牌状态和行业
+约束会标注为 skipped，或退回日线自带的 `trade_status`、`is_st` 字段。
+`--industry-system` 不填时使用快照自带的行业体系；快照里有多套体系时必须显式指定，
+否则行业中性化按 skipped 处理。
+
+参考权重是按等权加约束算出的仓位，不是必须执行的金额；清单没有经过样本外验证，
+不能当成投资建议。
+
+定向验证命令：
+
+~~~text
+python -m unittest discover -s tests -p test_picks.py -v
+~~~
+
 ## 月末历史股票池原型
 
 先用离线合成数据跑通 `固定快照 -> DataRepository -> 月末筛选 -> 结果与清单`。
