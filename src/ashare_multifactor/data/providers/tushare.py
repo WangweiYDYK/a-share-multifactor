@@ -8,15 +8,17 @@ from __future__ import annotations
 
 import math
 import os
+import time
 from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from ashare_multifactor.data.contracts import RawDataset
 
 SOURCE = "tushare_pro"
 STOCK_STATUSES = ("L", "D", "P")
+STOCK_BASIC_REQUEST_INTERVAL_SECONDS = 61.0
 
 
 class TushareError(RuntimeError):
@@ -67,7 +69,12 @@ class TushareProvider:
         import pandas as pd
 
         frames = []
-        for status in STOCK_STATUSES:
+        for index, status in enumerate(STOCK_STATUSES):
+            if index:
+                # Low-tier Tushare accounts may allow only one stock_basic
+                # request per minute. Pace the three historical status calls
+                # instead of dropping delisted or paused securities.
+                time.sleep(STOCK_BASIC_REQUEST_INTERVAL_SECONDS)
             frame = self._client.stock_basic(
                 exchange="",
                 list_status=status,
@@ -95,6 +102,33 @@ class TushareProvider:
             "daily_prices",
             frame,
             metadata={"trade_date": trade_date, "adjustment": "none"},
+        )
+
+    def fetch_daily_range(
+        self,
+        symbols: Sequence[str],
+        start_date: str,
+        end_date: str,
+    ) -> RawDataset:
+        """Fetch an unadjusted daily range for a bounded symbol batch."""
+        self._require_client()
+        if not symbols:
+            raise ValueError("At least one symbol is required.")
+        frame = self._client.daily(
+            ts_code=",".join(symbols),
+            start_date=_compact_date(start_date),
+            end_date=_compact_date(end_date),
+            fields="ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount",
+        )
+        return self._dataset(
+            "daily_prices",
+            frame,
+            metadata={
+                "symbols": list(symbols),
+                "start_date": start_date,
+                "end_date": end_date,
+                "adjustment": "none",
+            },
         )
 
     def _dataset(self, name: str, frame: Any, metadata: dict[str, Any]) -> RawDataset:
