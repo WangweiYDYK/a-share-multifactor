@@ -107,6 +107,54 @@ pinned = DataRepository(
 
 `as_of` 只保留 `available_at <= as_of` 的行。只写日期的 `as_of` 按当天 23:59:59（Asia/Shanghai）处理；不带时区的日期时间按 Asia/Shanghai 处理。读取结果会在 `metadata` 中保留 `snapshot_id`、`source`、`source_version`、请求时间和实际可用行数。
 
+## 月频多因子回测 Demo
+
+离线合成市场跑通 `月末决策 -> 因子与预处理 -> 目标组合 -> 次日开盘撮合 -> 每日估值 -> 绩效与 IC`：
+
+```powershell
+run-multifactor-backtest
+```
+
+等价模块入口，可指定区间、证券数和随机种子：
+
+```powershell
+python -m ashare_multifactor.backtest.cli `
+  --start-date 2023-07-03 `
+  --end-date 2024-07-31 `
+  --symbols 40 `
+  --seed 11
+```
+
+每次运行创建 `artifacts/backtest-run/<run_id>/`，不会覆盖旧结果：
+
+```text
+manifest.json              数据、因子、预处理、股票池、撮合与配置版本
+metrics.json               收益、回撤、费用、换手、IC/RankIC 汇总
+targets.csv                月末目标权重
+orders.csv / order_skips.csv   次日订单与未生成订单的原因
+fills.csv / unfilled.csv   成交与拒单原因
+daily_account.csv          每日现金、市值、净值、回撤
+factor_snapshot.csv        逐股原始与处理后因子值
+monthly_evaluation.csv     逐月 IC、换手与标签可用时间
+```
+
+合成市场由 `--symbols` 和 `--seed` 决定，包含 ST、停牌、低流动性、上市不足、
+退市和一次拆股，用来驱动股票池、撮合、公司行动和估值分支。它不是真实行情，
+收益、IC 和换手都没有经济含义，不能据此判断因子有效性。月末最后一个交易日的
+标签要等到下一次调仓执行日才成立，因此数据窗口末尾的一到两个决策月标记为
+`label_pending`。
+
+读取既有标准快照而不是合成市场时加 `--snapshot-root data/normalized/snapshots`；
+现有 BaoStock/Tushare 快照仍缺少 `daily_basic`、`security_status`、
+`industry_membership` 三类历史数据，以及复权因子、逐日涨跌停和财务公告数据，
+因此还不具备真实回测口径。
+
+定向验证命令（会在仓库内保留一份合成结果）：
+
+```powershell
+python -m unittest discover -s tests -p test_backtest_engine.py -v
+```
+
 ## 月末历史股票池原型
 
 先用离线合成数据跑通 `固定快照 -> DataRepository -> 月末筛选 -> 结果与清单`。

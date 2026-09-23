@@ -22,6 +22,7 @@ dev = [
 [project.scripts]
 fetch-baostock-demo = "ashare_multifactor.data.baostock_demo:main"
 fetch-tushare-demo = "ashare_multifactor.data.tushare_demo:main"
+run-multifactor-backtest = "ashare_multifactor.backtest.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
