@@ -86,6 +86,16 @@ class BaoStockProvider:
             metadata={"symbols": list(symbols)},
         )
 
+    def fetch_all_security_master(self) -> RawDataset:
+        """Fetch the complete BaoStock security master in one request."""
+        self._require_login()
+        result = self._client.query_stock_basic()
+        return self._dataset(
+            "security_master",
+            result,
+            metadata={"scope": "all_securities"},
+        )
+
     def fetch_daily(
         self,
         symbols: Sequence[str],
