@@ -59,10 +59,57 @@ DAILY_PRICES_SCHEMA = {
     "available_at": "str",
 }
 
+# Daily amounts and market caps are yuan; share counts are shares, not lots.
+DAILY_BASIC_SCHEMA = {
+    "trade_date": "str",
+    "symbol": "str",
+    "total_share": "float",
+    "float_share": "float",
+    "total_mv": "float",
+    "circ_mv": "float",
+    "turnover_rate": "float",
+    "pe_ttm": "float",
+    "pb_mrq": "float",
+    "source": "str",
+    "source_version": "str",
+    "retrieved_at": "str",
+    "available_at": "str",
+}
+
+SECURITY_STATUS_SCHEMA = {
+    "trade_date": "str",
+    "symbol": "str",
+    "list_status": "str",
+    "trade_status": "int",
+    "is_st": "int",
+    "is_suspended": "int",
+    "is_delisting": "int",
+    "source": "str",
+    "source_version": "str",
+    "retrieved_at": "str",
+    "available_at": "str",
+}
+
+INDUSTRY_MEMBERSHIP_SCHEMA = {
+    "symbol": "str",
+    "industry_system": "str",
+    "industry_code": "str",
+    "industry_name": "str",
+    "effective_from": "str",
+    "effective_to": "str",
+    "source": "str",
+    "source_version": "str",
+    "retrieved_at": "str",
+    "available_at": "str",
+}
+
 DATASET_SCHEMAS = {
     "trade_calendar": TRADE_CALENDAR_SCHEMA,
     "security_master": SECURITY_MASTER_SCHEMA,
     "daily_prices": DAILY_PRICES_SCHEMA,
+    "daily_basic": DAILY_BASIC_SCHEMA,
+    "security_status": SECURITY_STATUS_SCHEMA,
+    "industry_membership": INDUSTRY_MEMBERSHIP_SCHEMA,
 }
 
 

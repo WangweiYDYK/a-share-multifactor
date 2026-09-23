@@ -106,3 +106,62 @@ pinned = DataRepository(
 ```
 
 `as_of` 只保留 `available_at <= as_of` 的行。只写日期的 `as_of` 按当天 23:59:59（Asia/Shanghai）处理；不带时区的日期时间按 Asia/Shanghai 处理。读取结果会在 `metadata` 中保留 `snapshot_id`、`source`、`source_version`、请求时间和实际可用行数。
+
+## 月末历史股票池原型
+
+先用离线合成数据跑通 `固定快照 -> DataRepository -> 月末筛选 -> 结果与清单`。
+这不是实际历史股票池：股票代码、行情、行业和日历都是合成样例，其中日历仅按工作日生成，不能用于真实 A 股研究。
+
+在仓库根目录运行，不需要 Token 或网络：
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m ashare_multifactor.data.universe_demo
+```
+
+每次运行创建 `artifacts/universe-demo/<run_id>/`，不会覆盖旧结果：
+
+```text
+snapshots/synthetic-universe-2025-08-v1/  六类标准数据及快照清单
+result/eligible.json                    入池名单与依据
+result/exclusions.json                  排除名单及逐股原因
+result/manifest.json                    数据来源、版本、摘要、规则与配置
+```
+
+样例月份为 `2025-08`，按样例日历在 `2025-08-29 18:00:00+08:00` 决策。
+预期 12 只候选中 1 只入池、11 只排除。演示阈值为上市至少 120 个交易日、
+近 20 个交易日日均成交额至少 5,000 元；这些只是样例配置，不是正式策略参数。
+排除原因覆盖 ST、停牌、退市、上市不足、缺失市值、低流动性、缺失行业、
+行情缺口和未知状态。决策之后才可见的更正不会影响当时结果。
+
+真实快照准备好后可复用同一构建器：
+
+```python
+from pathlib import Path
+from ashare_multifactor.data import DataRepository
+from ashare_multifactor.data.universe import UniverseConfig, build_universe_from_repository
+
+result = build_universe_from_repository(
+    DataRepository(Path("data/normalized/snapshots"), snapshot_id="your-fixed-snapshot-id"),
+    "2025-08",
+    config=UniverseConfig(min_average_amount=50_000_000, industry_system="your-industry-system"),
+)
+```
+
+输入必须包含 `trade_calendar`、`security_master`、`daily_prices`、`daily_basic`、
+`security_status`、`industry_membership`，每行都有带时区的 `available_at` 及来源版本。
+日历须覆盖已知最早上市日至目标月末，日线使用不复权成交额；市值、成交额统一为元。
+状态必须是决策日的历史状态，行业区间采用 `[effective_from, effective_to)`，
+不能用当前 ST、当前行业或仅包含现存股票的名单代替。整类关键数据缺失会阻止构建，
+单只股票缺失则记录排除原因，不静默补零。
+
+现有 BaoStock/Tushare demo 尚未补齐上述六类历史数据，也未确认新增数据的历史可见性，
+因此不能直接用它们生成可信的全市场历史股票池。本原型不计算因子、不评估财务过滤，
+也不判断下一交易日能否实际成交；QMT 与执行层继续暂缓。
+
+定向验证命令（会在仓库内保留一份合成结果）：
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -p test_universe.py -v
+```
