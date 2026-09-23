@@ -126,6 +126,18 @@ snapshots/synthetic-universe-2025-08-v1/  六类标准数据及快照清单
 result/eligible.json                    入池名单与依据
 result/exclusions.json                  排除名单及逐股原因
 result/manifest.json                    数据来源、版本、摘要、规则与配置
+result/report.html                      可离线打开的可视化报告
+```
+
+直接在浏览器打开 `result/report.html`，查看入池比例、排除原因、可筛选逐股名单、
+决策依据和数据来源版本。排除原因可重复计数，不等于排除股票数量；缺失值显示为缺失。
+报告不依赖网络或服务端。页面只展示已保存结果，不重新运行筛选，也不代表收益回测。
+
+旧运行目录也可以补生成报告（已有报告不会被覆盖）：
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m ashare_multifactor.reports.universe artifacts/universe-demo/<run_id>/result
 ```
 
 样例月份为 `2025-08`，按样例日历在 `2025-08-29 18:00:00+08:00` 决策。

@@ -24,7 +24,7 @@ data/raw/
 data/normalized/
 data/derived/
 data/cache/
-reports/
+/reports/
 artifacts/
 outputs/
 *.csv

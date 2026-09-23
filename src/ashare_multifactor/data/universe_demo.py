@@ -16,6 +16,7 @@ from ashare_multifactor.data.universe import (
     build_universe_from_repository,
     write_universe_result,
 )
+from ashare_multifactor.reports.universe import write_universe_report
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MONTH = "2025-08"
@@ -114,6 +115,7 @@ def run(output_dir: Path) -> Path:
     repository = DataRepository(root, snapshot_id=SNAPSHOT_ID)
     result = build_universe_from_repository(repository, MONTH, config=DEMO_CONFIG)
     manifest = write_universe_result(output_dir / "result", result)
+    write_universe_report(manifest.parent)
     LOGGER.info(
         "SYNTHETIC ONLY: %s at %s; candidates=%s eligible=%s excluded=%s",
         MONTH, result.decision_as_of, result.summary["candidate_count"],
@@ -137,6 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOGGER.error("Synthetic universe demo failed: %s", exc)
         return 1
     LOGGER.info("Saved synthetic universe result: %s", manifest)
+    LOGGER.info("Saved visual report: %s", manifest.parent / "report.html")
     return 0
 
 
