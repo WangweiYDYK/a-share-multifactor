@@ -17,6 +17,7 @@ from ashare_multifactor.execution.account import Account
 EXECUTION_VERSION = "execution-simulator-v1"
 SIDE_BUY = "buy"
 SIDE_SELL = "sell"
+SIDES = (SIDE_BUY, SIDE_SELL)
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,12 @@ class OrderIntent:
     requested_volume: int
     requested_price: float
     reason: str
+
+    def __post_init__(self) -> None:
+        if self.side not in SIDES:
+            raise ValueError(f"Unsupported order side {self.side!r}.")
+        if self.requested_volume <= 0:
+            raise ValueError("Order volume must be positive.")
 
 
 @dataclass(frozen=True)
@@ -130,7 +137,7 @@ def execute_orders(
         price = _execution_price(open_price, order.side, rules)
 
         if order.side == SIDE_BUY:
-            affordable = _max_affordable(account.cash, price, rules)
+            affordable = max_affordable_shares(account.cash, price, rules)
             if affordable <= 0:
                 rejects.append(_reject(order, 0, "insufficient_cash"))
                 continue
@@ -140,7 +147,7 @@ def execute_orders(
             fee = trade_fee(volume, price, SIDE_BUY, rules)
             account.buy(order.symbol, volume, price, fee)
         else:
-            sellable = account.position(order.symbol).available_to_sell
+            sellable = account.available_to_sell(order.symbol)
             if sellable <= 0:
                 rejects.append(_reject(order, 0, "t_plus_one_lock"))
                 continue
@@ -185,13 +192,18 @@ def price_limits(
     status: Mapping[str, Any],
     limits: LimitRules,
 ) -> tuple[float | None, float | None]:
-    """Return (limit_down, limit_up) from the previous close and board rules."""
+    """Return (limit_down, limit_up) from the previous close and board rules.
+
+    Without a previous close or an explicit limit price the band is unknown, and
+    an unknown band is reported as ``(None, None)`` instead of being derived
+    from the same day's close.
+    """
     explicit_down = _number(bar.get("limit_down"))
     explicit_up = _number(bar.get("limit_up"))
     if explicit_down is not None or explicit_up is not None:
         return explicit_down, explicit_up
 
-    previous_close = _number(bar.get("pre_close")) or _number(bar.get("close"))
+    previous_close = _number(bar.get("pre_close"))
     if previous_close is None or previous_close <= 0:
         return None, None
     percent = board_limit_pct(symbol, status, limits)
@@ -234,6 +246,27 @@ def trade_fee(
     return commission + transfer + stamp
 
 
+def max_affordable_shares(
+    cash: float,
+    price: float,
+    rules: ExecutionRules,
+) -> int:
+    """Largest lot-aligned buy volume whose shares plus fees fit in cash.
+
+    Order sizing and order matching share this function so a planned buy can
+    always be funded, including the minimum commission and transfer fee.
+    """
+    lot = rules.lot_size
+    if cash <= 0 or price <= 0 or lot <= 0:
+        return 0
+    volume = int(cash / price) // lot * lot
+    while volume > 0:
+        if volume * price + trade_fee(volume, price, SIDE_BUY, rules) <= cash:
+            return volume
+        volume -= lot
+    return 0
+
+
 def _execution_price(open_price: float, side: str, rules: ExecutionRules) -> float:
     slippage = rules.slippage_bps / 10000.0
     if side == SIDE_BUY:
@@ -250,16 +283,6 @@ def _participant_capacity(
         return 0
     shares = int(math.floor(volume * rules.max_participation_rate))
     return shares // rules.lot_size * rules.lot_size
-
-
-def _max_affordable(cash: float, price: float, rules: ExecutionRules) -> int:
-    lot = rules.lot_size
-    volume = int(cash / price) // lot * lot
-    while volume > 0:
-        if volume * price + trade_fee(volume, price, SIDE_BUY, rules) <= cash:
-            return volume
-        volume -= lot
-    return 0
 
 
 def _is_suspended(bar: Mapping[str, Any], status: Mapping[str, Any]) -> bool:

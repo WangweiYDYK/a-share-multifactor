@@ -56,6 +56,7 @@ LIMITATIONS = (
     "delisting settlement is not modelled; delisted names are excluded from new targets",
     "factor prices use the backward-adjusted series while execution and valuation use raw prices",
     "cash dividends are credited to cash and are not re-applied through adjusted prices",
+    "factor inputs require a timezone-aware available_at; rows without one are never visible",
 )
 
 
@@ -247,7 +248,9 @@ def _decide(
     }
     closes_by_symbol = {
         symbol: closes
-        for symbol, closes in _visible_closes(datasets["daily_prices"], day).items()
+        for symbol, closes in _visible_closes(
+            datasets["daily_prices"], day, cutoff
+        ).items()
         if symbol in eligible_set
     }
 
@@ -424,15 +427,24 @@ def _monthly_rows(
 def _visible_closes(
     dataset: CanonicalDataset,
     day: date,
+    cutoff: datetime,
 ) -> dict[str, list[float]]:
-    """Backward-adjusted closes per symbol, strictly up to the decision day."""
-    cutoff = day.isoformat()
+    """Backward-adjusted closes visible at the decision cutoff.
+
+    A bar counts only when it is both dated on or before the decision day and
+    stamped as available at or before the cutoff, so a later publication cannot
+    leak into the factor cross-section.
+    """
+    decision_day = day.isoformat()
     series: dict[str, list[tuple[date, float]]] = {}
     for row in dataset.rows:
         if row.get("adjustment") != "backward":
             continue
         trade_date = str(row.get("trade_date") or "")
-        if not trade_date or trade_date > cutoff:
+        if not trade_date or trade_date > decision_day:
+            continue
+        available_at = _available_at(row.get("available_at"))
+        if available_at is None or available_at > cutoff:
             continue
         close = _number(row.get("close"))
         if close is None or close <= 0:
@@ -444,6 +456,21 @@ def _visible_closes(
         symbol: [close for _, close in sorted(entries)]
         for symbol, entries in series.items()
     }
+
+
+def _available_at(value: Any) -> datetime | None:
+    """Parse a timezone-aware availability stamp.
+
+    Naive or unparsable stamps are treated as not yet visible, which keeps a
+    mislabelled row out of the factor cross-section instead of leaking it.
+    """
+    if value in (None, ""):
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo is not None else None
 
 
 def _adjusted_index(

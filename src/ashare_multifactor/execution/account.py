@@ -36,6 +36,7 @@ class Account:
             position.unavailable_shares = 0
 
     def position(self, symbol: str) -> Position:
+        """Return the position, creating an empty one for order setup."""
         position = self.positions.get(symbol)
         if position is None:
             position = Position(symbol=symbol)
@@ -45,6 +46,11 @@ class Account:
     def shares(self, symbol: str) -> int:
         position = self.positions.get(symbol)
         return position.shares if position else 0
+
+    def available_to_sell(self, symbol: str) -> int:
+        """Read-only sellable quantity, so lookups never create a position."""
+        position = self.positions.get(symbol)
+        return position.available_to_sell if position else 0
 
     def buy(self, symbol: str, shares: int, price: float, fee: float) -> None:
         """Buy shares; the whole lot becomes sellable on the next trading day."""

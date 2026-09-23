@@ -17,6 +17,7 @@ from ashare_multifactor.execution.simulator import (
     RejectedOrder,
     board_limit_pct,
     execute_orders,
+    max_affordable_shares,
     price_limits,
     trade_fee,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "board_limit_pct",
     "create_order_intents",
     "execute_orders",
+    "max_affordable_shares",
     "price_limits",
     "trade_fee",
 ]

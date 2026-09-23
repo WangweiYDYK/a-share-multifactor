@@ -4,23 +4,31 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from ashare_multifactor.backtest.config import BacktestConfig
-from ashare_multifactor.backtest.engine import run_backtest, write_run_artifacts
+from ashare_multifactor.backtest.engine import (
+    _visible_closes,
+    run_backtest,
+    write_run_artifacts,
+)
 from ashare_multifactor.backtest.synthetic_market import (
     INDUSTRY_SYSTEM,
     generate_synthetic_market,
     synthetic_data_version,
 )
+from ashare_multifactor.data.contracts import CanonicalDataset
 from ashare_multifactor.execution.account import Account
+from ashare_multifactor.execution.orders import create_order_intents
 from ashare_multifactor.execution.simulator import (
     ExecutionRules,
     LimitRules,
     OrderIntent,
     execute_orders,
+    trade_fee,
 )
+from ashare_multifactor.portfolio.constructor import TargetPortfolio
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_START = "2023-01-02"
@@ -28,6 +36,7 @@ DATA_END = "2024-07-31"
 BACKTEST_START = "2023-07-03"
 SYMBOLS = 40
 SEED = 11
+SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 
 class MonthlyBacktestTest(unittest.TestCase):
@@ -107,6 +116,11 @@ class MonthlyBacktestTest(unittest.TestCase):
             ]
             self.assertEqual(sides[0], "buy", symbol)
 
+        # Cash has to fund the whole target list, not just its first name.
+        self.assertGreater(
+            max(int(row["position_count"]) for row in self.result.daily), 10
+        )
+
         self.assertEqual(self.result.daily[0]["nav"], 1.0)
         self.assertGreater(self.result.daily[-1]["total_equity"], 0.0)
         # A label needs a later execution day inside the window, so the last
@@ -138,6 +152,71 @@ class MonthlyBacktestTest(unittest.TestCase):
         metrics = json.loads((output / "metrics.json").read_text(encoding="utf-8"))
         self.assertEqual(metrics["trade_count"], len(self.result.fills))
         print(f"\nEnd-to-end run artifacts: {output}")
+
+    def test_order_plan_spends_only_the_approved_volume(self) -> None:
+        rules = ExecutionRules()
+        account = Account(cash=1_000_000.0)
+        prices = {"600000.SH": 10.0, "600001.SH": 10.0, "600002.SH": 10.0}
+        target = _target(weights={symbol: 0.30 for symbol in prices})
+
+        plan = create_order_intents(
+            target,
+            account,
+            prices,
+            signal_time="2024-03-29T18:00:00+08:00",
+            order_time="2024-03-29T18:00:00+08:00",
+            execution_date="2024-04-01",
+            rules=rules,
+        )
+
+        self.assertEqual([order.side for order in plan.orders], ["buy"] * 3)
+        self.assertEqual(list(plan.skipped), [])
+        spend = sum(
+            order.requested_volume * prices[order.symbol] for order in plan.orders
+        )
+        fees = sum(
+            trade_fee(order.requested_volume, prices[order.symbol], "buy", rules)
+            for order in plan.orders
+        )
+        self.assertGreater(spend, 850_000.0)
+        self.assertLessEqual(spend + fees, account.cash)
+
+    def test_full_exit_submits_the_whole_odd_lot(self) -> None:
+        rules = ExecutionRules()
+        account = Account(cash=0.0)
+        account.position("600000.SH").shares = 150
+
+        plan = create_order_intents(
+            _target(weights={}),
+            account,
+            {"600000.SH": 10.0},
+            signal_time="2024-03-29T18:00:00+08:00",
+            order_time="2024-03-29T18:00:00+08:00",
+            execution_date="2024-04-01",
+            rules=rules,
+        )
+
+        self.assertEqual(len(plan.orders), 1)
+        self.assertEqual(plan.orders[0].side, "sell")
+        self.assertEqual(plan.orders[0].requested_volume, 150)
+        self.assertEqual(plan.orders[0].reason, "rebalance_exit")
+
+    def test_factor_inputs_ignore_bars_published_after_the_cutoff(self) -> None:
+        dataset = CanonicalDataset(
+            name="daily_prices",
+            primary_key=("trade_date", "symbol", "adjustment"),
+            rows=[
+                _price_row("2024-03-27", 9.0, "2024-03-27T18:00:00"),
+                _price_row("2024-03-28", 10.0, "2024-03-28T18:00:00+08:00"),
+                _price_row("2024-03-29", 11.0, "2024-03-29T20:00:00+08:00"),
+            ],
+            metadata={},
+        )
+        cutoff = datetime(2024, 3, 29, 18, 0, tzinfo=SHANGHAI_TZ)
+
+        closes = _visible_closes(dataset, date(2024, 3, 29), cutoff)
+
+        self.assertEqual(closes["600000.SH"], [10.0])
 
     def test_matching_enforces_a_share_constraints(self) -> None:
         rules = ExecutionRules()
@@ -200,6 +279,31 @@ class MonthlyBacktestTest(unittest.TestCase):
         self.assertAlmostEqual(account.total_equity({"600000.SH": 10.0}), 20_000.0)
         self.assertEqual(len(account.corporate_action_log), 1)
         self.assertEqual(account.corporate_action_log[0]["action_type"], "split")
+
+
+def _target(weights: dict[str, float]) -> TargetPortfolio:
+    return TargetPortfolio(
+        decision_date="2024-03-29",
+        execution_date="2024-04-01",
+        weights=weights,
+        scores={symbol: 0.0 for symbol in weights},
+        ranks={symbol: index for index, symbol in enumerate(weights, start=1)},
+        reasons={symbol: "test" for symbol in weights},
+        constraint_state={},
+    )
+
+
+def _price_row(trade_date: str, close: float, available_at: str) -> dict:
+    return {
+        "trade_date": trade_date,
+        "symbol": "600000.SH",
+        "adjustment": "backward",
+        "open": close,
+        "close": close,
+        "source": "test",
+        "source_version": "test-v1",
+        "available_at": available_at,
+    }
 
 
 def _open_days(datasets, start: str, end: str) -> list[str]:

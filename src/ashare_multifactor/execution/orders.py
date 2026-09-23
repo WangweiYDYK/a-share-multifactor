@@ -16,11 +16,12 @@ from ashare_multifactor.execution.simulator import (
     SIDE_SELL,
     ExecutionRules,
     OrderIntent,
+    max_affordable_shares,
+    trade_fee,
 )
 from ashare_multifactor.portfolio.constructor import TargetPortfolio
 
 ORDERS_VERSION = "order-intents-v1"
-CASH_SAFETY = 1e-9
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,12 @@ def create_order_intents(
         price = decision_prices.get(symbol)
         if price is None or price <= 0:
             skipped.append(
-                SkippedOrder(symbol=symbol, side=SIDE_BUY, volume=0, reason="missing_decision_price")
+                SkippedOrder(
+                    symbol=symbol,
+                    side=SIDE_BUY,
+                    volume=0,
+                    reason="missing_decision_price",
+                )
             )
             continue
         target_shares[symbol] = int(weight * equity / price) // lot * lot
@@ -90,12 +96,19 @@ def create_order_intents(
 
         if delta < 0:
             requested = -delta
-            sellable = account.position(symbol).available_to_sell
-            volume = min(requested, sellable) // lot * lot
+            sellable = min(requested, account.available_to_sell(symbol))
+            # A full exit submits the entire holding, because an odd lot below
+            # one board lot can only be sold in a single order.
+            volume = sellable if desired == 0 else sellable // lot * lot
             if volume <= 0:
                 skipped.append(
                     SkippedOrder(
-                        symbol=symbol, side=SIDE_SELL, volume=requested, reason="t_plus_one_lock"
+                        symbol=symbol,
+                        side=SIDE_SELL,
+                        volume=requested,
+                        reason=(
+                            "below_lot_size" if sellable > 0 else "t_plus_one_lock"
+                        ),
                     )
                 )
                 continue
@@ -105,7 +118,11 @@ def create_order_intents(
                         symbol=symbol,
                         side=SIDE_SELL,
                         volume=requested - volume,
-                        reason="t_plus_one_lock",
+                        reason=(
+                            "t_plus_one_lock"
+                            if sellable < requested
+                            else "below_lot_size"
+                        ),
                     )
                 )
             sells.append(
@@ -137,13 +154,16 @@ def create_order_intents(
                 )
 
     available_cash = account.cash + sum(
-        order.requested_volume * order.requested_price for order in sells
+        order.requested_volume * order.requested_price
+        - trade_fee(
+            order.requested_volume, order.requested_price, SIDE_SELL, rules
+        )
+        for order in sells
     )
     approved: list[OrderIntent] = list(sells)
     for order in buys:
         price = order.requested_price
-        unit_cost = price * (1.0 + rules.commission_rate + rules.transfer_fee)
-        affordable = int(max(available_cash, 0.0) / unit_cost) // lot * lot
+        affordable = max_affordable_shares(available_cash, price, rules)
         if affordable <= 0:
             skipped.append(
                 SkippedOrder(
@@ -163,9 +183,11 @@ def create_order_intents(
                     reason="insufficient_cash",
                 )
             )
-            approved.append(replace(order, requested_volume=affordable))
-        else:
-            approved.append(order)
-        available_cash -= affordable * price * (1.0 + rules.commission_rate + rules.transfer_fee)
+            order = replace(order, requested_volume=affordable)
+        approved.append(order)
+        # Spend what the approved order actually costs, not the affordable cap.
+        available_cash -= order.requested_volume * price + trade_fee(
+            order.requested_volume, price, SIDE_BUY, rules
+        )
 
     return OrderPlan(orders=tuple(approved), skipped=tuple(skipped))
