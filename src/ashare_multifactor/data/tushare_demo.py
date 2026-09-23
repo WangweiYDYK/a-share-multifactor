@@ -1,24 +1,19 @@
-"""Command-line demo for downloading a minimal A-share data slice."""
+"""Download a small Tushare Pro sample through the canonical data layer."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Sequence
 
-from ashare_multifactor.data.tushare import (
-    FetchResult,
-    create_client,
-    fetch_daily,
-    fetch_stock_basic,
-    fetch_trade_calendar,
-)
+from ashare_multifactor.data.normalize import CanonicalDataService
+from ashare_multifactor.data.providers.tushare import TushareProvider
+from ashare_multifactor.data.storage import write_datasets
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_OUTPUT = Path("data/raw/tushare_demo")
+DEFAULT_OUTPUT = Path("data/normalized/tushare_demo")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,60 +38,40 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run(trade_date: str, calendar_start: str | None, output_dir: Path) -> list[FetchResult]:
+def run(trade_date: str, calendar_start: str | None, output_dir: Path) -> Path:
     parsed_trade_date = datetime.strptime(trade_date, "%Y-%m-%d").date()
     if calendar_start is None:
-        from datetime import timedelta
-
         calendar_start = (parsed_trade_date - timedelta(days=30)).isoformat()
+    else:
+        datetime.strptime(calendar_start, "%Y-%m-%d")
 
-    client = create_client()
-    datasets = {
-        "trade_calendar": fetch_trade_calendar(client, calendar_start, trade_date),
-        "stock_basic": fetch_stock_basic(client),
-        "daily": fetch_daily(client, trade_date),
-    }
+    normalizer = CanonicalDataService()
+    with TushareProvider() as provider:
+        raw_calendar = provider.fetch_trade_calendar(calendar_start, trade_date)
+        raw_security_master = provider.fetch_security_master()
+        raw_daily = provider.fetch_daily(trade_date)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    results = []
-    for name, frame in datasets.items():
-        path = output_dir / f"{name}.csv"
-        frame.to_csv(path, index=False, encoding="utf-8-sig")
-        results.append(FetchResult(name=name, rows=len(frame), path=path.resolve()))
-
-    manifest = {
-        "run_at": datetime.now(timezone.utc).isoformat(),
-        "trade_date": trade_date,
-        "calendar_start": calendar_start,
-        "datasets": [
-            {"name": item.name, "rows": item.rows, "path": str(item.path)}
-            for item in results
-        ],
-        "warning": (
-            "Daily available_at uses the project convention of 15:30 Asia/Shanghai; "
-            "it is not a Tushare publication timestamp."
-        ),
-    }
-    (output_dir / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    security_master = normalizer.normalize(raw_security_master)
+    daily_prices = normalizer.enrich_daily_prices(
+        normalizer.normalize(raw_daily),
+        security_master,
     )
-    return results
+    datasets = [normalizer.normalize(raw_calendar), security_master, daily_prices]
+    return write_datasets(output_dir, datasets)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = build_parser().parse_args(argv)
     try:
-        results = run(args.trade_date, args.calendar_start, args.output_dir)
+        manifest = run(args.trade_date, args.calendar_start, args.output_dir)
     except Exception as exc:
         LOGGER.error("Tushare demo failed: %s", exc)
         return 1
 
-    for result in results:
-        LOGGER.info("Saved %s rows for %s to %s", result.rows, result.name, result.path)
+    LOGGER.info("Saved canonical Tushare sample; manifest: %s", manifest)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
