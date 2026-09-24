@@ -76,6 +76,10 @@ class PriceFactorResearchTest(unittest.TestCase):
             self.assertGreater(manifest["evaluated_months"], 1)
             self.assertTrue((output / "data_quality_report.html").is_file())
             self.assertTrue((output / "factor_report.html").is_file())
+            report = (output / "factor_report.html").read_text(encoding="utf-8")
+            self.assertIn("如何阅读这份报告", report)
+            self.assertIn("本次结果的直白结论", report)
+            self.assertIn("Q5-Q1月均收益", report)
 
             summary = pd.read_csv(output / "factor_summary.csv")
             self.assertEqual(

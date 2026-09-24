@@ -635,20 +635,27 @@ def _render_factor_html(
     quantile_rows: Sequence[Mapping[str, Any]],
     quantiles: int,
 ) -> str:
+    overview_rows = [_factor_overview_row(row) for row in summary_rows]
     sections = [
-        "<p class=note>月末收盘后计算信号；标签为下一交易日开盘至下月下一交易日开盘的后复权收益。结果未计交易成本，亦未做行业或市值中性化。</p>",
+        "<p class=note>这是一份因子排序有效性报告，不是账户回测。月末收盘后计算信号；"
+        "收益标签为下一交易日开盘至下月下一交易日开盘的后复权收益。结果未计交易成本，"
+        "也未做行业或市值中性化。</p>",
+        "<h2>如何阅读这份报告</h2>",
+        _factor_help_html(),
+        "<h2>本次结果的直白结论</h2>",
+        _factor_conclusion_html(summary_rows),
         "<h2>因子总览</h2>",
         _html_table(
-            summary_rows,
+            overview_rows,
             (
-                "factor",
-                "months",
-                "mean_ic",
-                "mean_rank_ic",
-                "rank_ic_positive_rate",
-                "rank_ic_ir",
-                "mean_coverage",
-                "mean_top_minus_bottom_return",
+                "因子",
+                "有效月份",
+                "平均IC",
+                "平均RankIC",
+                "RankIC为正比例",
+                "RankIC IR",
+                "覆盖率",
+                "Q5-Q1月均收益",
             ),
         ),
     ]
@@ -674,12 +681,147 @@ def _render_factor_html(
         sections.extend(
             [
                 f"<h2>{html.escape(factor)}</h2>",
+                f'<p class="factor-note">{html.escape(_factor_direction(factor))}</p>',
                 _line_svg(series),
+                "<p class=caption>月度RankIC：零线上方表示该月因子排序方向正确；"
+                "零线下方表示当月失效或反向。应关注长期稳定性，而不是单个极端月份。</p>",
                 "<h3>各分位平均下期收益</h3>",
-                _html_table(quantile_means, ("quantile", "mean_forward_return")),
+                _html_table(
+                    [
+                        {
+                            "分位": row["quantile"],
+                            "平均下期收益": _percent(row["mean_forward_return"]),
+                        }
+                        for row in quantile_means
+                    ],
+                    ("分位", "平均下期收益"),
+                ),
+                "<p class=caption>Q1是因子分数最低组，Q5是因子分数最高组。"
+                "理想状态是收益从Q1到Q5逐步上升；Q5-Q1为正只说明两端方向正确，"
+                "不一定代表中间分组单调。</p>",
             ]
         )
     return _html_page("月频价格因子研究报告", "".join(sections))
+
+
+def _factor_overview_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "因子": _factor_name(str(row["factor"])),
+        "有效月份": row["months"],
+        "平均IC": _decimal(row["mean_ic"]),
+        "平均RankIC": _decimal(row["mean_rank_ic"]),
+        "RankIC为正比例": _percent(row["rank_ic_positive_rate"]),
+        "RankIC IR": _decimal(row["rank_ic_ir"]),
+        "覆盖率": _percent(row["mean_coverage"]),
+        "Q5-Q1月均收益": _percent(row["mean_top_minus_bottom_return"]),
+    }
+
+
+def _factor_help_html() -> str:
+    rows = [
+        {
+            "指标": "平均IC",
+            "含义": "因子数值与下期收益的线性相关性",
+            "怎么理解": "正数方向正确，负数方向相反；容易受极端收益影响",
+        },
+        {
+            "指标": "平均RankIC",
+            "含义": "因子排名与下期收益排名的相关性",
+            "怎么理解": "最应优先关注；正数越大，排序能力通常越强",
+        },
+        {
+            "指标": "RankIC为正比例",
+            "含义": "月度RankIC大于零的月份占比",
+            "怎么理解": "衡量方向稳定性；50%附近通常说明不稳定",
+        },
+        {
+            "指标": "RankIC IR",
+            "含义": "平均RankIC除以月度RankIC标准差",
+            "怎么理解": "越高越稳定；本报告没有年化，不能与年化ICIR直接比较",
+        },
+        {
+            "指标": "覆盖率",
+            "含义": "通过前置筛选的股票中成功算出因子的比例",
+            "怎么理解": "不是全市场覆盖率；前置筛选含上市期、流动性、ST和交易状态",
+        },
+        {
+            "指标": "Q5-Q1月均收益",
+            "含义": "最高分组平均收益减最低分组平均收益",
+            "怎么理解": "是研究价差，不是账户可以直接获得的净收益",
+        },
+    ]
+    order = (
+        "<ol><li>先看平均RankIC是否为正。</li>"
+        "<li>再看RankIC为正比例和月度曲线，判断是否稳定。</li>"
+        "<li>最后看Q1至Q5是否大致单调，以及Q5-Q1价差。</li></ol>"
+    )
+    return order + _html_table(rows, ("指标", "含义", "怎么理解"))
+
+
+def _factor_conclusion_html(summary_rows: Sequence[Mapping[str, Any]]) -> str:
+    by_factor = {str(row["factor"]): row for row in summary_rows}
+    items = []
+    descriptions = {
+        "reversal_20d": "20日反转",
+        "momentum_60d": "60日动量",
+        "low_vol_60d": "60日低波",
+        "composite": "三因子等权综合",
+    }
+    for factor in ("reversal_20d", "low_vol_60d", "momentum_60d", "composite"):
+        row = by_factor.get(factor)
+        if row is None:
+            continue
+        rank_ic = float(row["mean_rank_ic"])
+        positive_rate = float(row["rank_ic_positive_rate"])
+        spread = float(row["mean_top_minus_bottom_return"])
+        if rank_ic > 0.03 and positive_rate >= 0.60 and spread > 0:
+            verdict = "当前样本中方向为正，值得进入下一轮稳健性与成本后回测。"
+        elif rank_ic < -0.03 and spread < 0:
+            verdict = "当前定义呈明显反向，暂时不宜按正向因子加入组合。"
+        else:
+            verdict = "当前证据较弱或不稳定，需要继续分阶段检查。"
+        items.append(
+            "<li><strong>{}</strong>：RankIC {}，正值月份 {}，Q5-Q1 {}。{}</li>".format(
+                html.escape(descriptions[factor]),
+                _decimal(rank_ic),
+                _percent(positive_rate),
+                _percent(spread),
+                html.escape(verdict),
+            )
+        )
+    return "<ul class=conclusions>" + "".join(items) + "</ul>"
+
+
+def _factor_name(factor: str) -> str:
+    return {
+        "reversal_20d": "20日反转",
+        "momentum_60d": "60日动量",
+        "low_vol_60d": "60日低波",
+        "composite": "三因子等权综合",
+    }.get(factor, factor)
+
+
+def _factor_direction(factor: str) -> str:
+    return {
+        "reversal_20d": "分数越高，代表过去20个交易日跌得越多；Q5是短期跌幅较大的股票。",
+        "momentum_60d": "分数越高，代表过去60个交易日涨得越多；Q5是中短期强势股票。",
+        "low_vol_60d": "方向已经统一：分数越高，代表过去60个交易日波动越低。",
+        "composite": "三个处理后因子类别等权；分数越高，代表综合排名越靠前。",
+    }.get(factor, "分数越高代表项目定义下越好。")
+
+
+def _decimal(value: Any) -> str:
+    if value is None:
+        return "—"
+    number = float(value)
+    return f"{number:.4f}" if math.isfinite(number) else "—"
+
+
+def _percent(value: Any) -> str:
+    if value is None:
+        return "—"
+    number = float(value)
+    return f"{number:.2%}" if math.isfinite(number) else "—"
 
 
 def _line_svg(series: Sequence[tuple[str, float]]) -> str:
@@ -745,6 +887,9 @@ table{{border-collapse:collapse;width:100%;font-size:13px}}
 th,td{{padding:9px 11px;border-bottom:1px solid #e8eeeb;text-align:right;white-space:nowrap}}
 th:first-child,td:first-child{{text-align:left}}th{{background:#eaf2ee}}
 .note{{padding:14px 16px;background:#fff8df;border-left:4px solid #d5a400}}
+.factor-note,.caption{{color:#52665f;line-height:1.7}}
+.caption{{font-size:13px;margin-top:8px}}
+.conclusions li,ol li{{margin:8px 0;line-height:1.65}}
 svg{{width:100%;background:white;border:1px solid #d9e3de;border-radius:12px}}
 .series{{fill:none;stroke:#087f5b;stroke-width:3}}
 .zero{{stroke:#9fb2aa;stroke-dasharray:5 5}}
