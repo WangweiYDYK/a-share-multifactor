@@ -107,6 +107,31 @@ pinned = DataRepository(
 
 `as_of` 只保留 `available_at <= as_of` 的行。只写日期的 `as_of` 按当天 23:59:59（Asia/Shanghai）处理；不带时区的日期时间按 Asia/Shanghai 处理。读取结果会在 `metadata` 中保留 `snapshot_id`、`source`、`source_version`、请求时间和实际可用行数。
 
+## BaoStock 数据质量与价格因子研究
+
+完整历史分批下载完成后，可以直接运行第一版研究闭环：
+
+```powershell
+run-price-factor-research `
+  --input-root data/normalized/backfills/baostock_20210101_20260923
+```
+
+程序逐只读取不复权与后复权分区，不需要把全部日线一次性载入内存。默认执行数据质量
+检查，并按月末截面评价 20 日反转、60 日动量、60 日低波及三因子等权综合分。标签为
+下一个调仓日开盘至再下一个调仓日开盘的后复权收益。每次运行输出到
+`artifacts/factor-research/<UTC时间戳>/`：
+
+```text
+data_quality.csv / data_quality_report.html
+factor_ic.csv / factor_quantiles.csv / factor_correlation.csv
+factor_summary.csv / factor_snapshot.csv / factor_report.html
+manifest.json
+```
+
+该分析不读取尚未确认历史可见性的 PE、PB 字段，也不假装存在缺失的历史行业或市值
+数据。因此当前结果没有行业、市值中性化，不含成交成本和涨跌停成交约束，属于单因子
+研究而不是可直接交易的组合回测。
+
 ## 月频多因子回测 Demo
 
 离线合成市场跑通 `月末决策 -> 因子与预处理 -> 目标组合 -> 次日开盘撮合 -> 每日估值 -> 绩效与 IC`：
