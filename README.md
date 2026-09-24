@@ -132,6 +132,32 @@ manifest.json
 数据。因此当前结果没有行业、市值中性化，不含成交成本和涨跌停成交约束，属于单因子
 研究而不是可直接交易的组合回测。
 
+## 价格双因子组合回测
+
+因子研究完成后，用保存的 `factor_snapshot.csv` 比较反转、低波、双因子、原三因子和
+合格股票等权基准：
+
+```powershell
+run-price-factor-portfolio `
+  --research-dir artifacts/factor-research/baostock-20210101-20260923-explained
+```
+
+默认每月选择综合分前 30 只，投入 95%，保留 5% 现金。组合使用后复权开盘收益，按
+实际权重漂移计算换手，并估算佣金、卖出印花税、过户费和滑点。输出包括：
+
+```text
+portfolio_report.html       组合比较、净值、分年度表现和结果说明
+portfolio_metrics.csv       全区间、开发区间和验证区间指标
+monthly_portfolio.csv       逐月收益、换手、成本、净值和回撤
+portfolio_holdings.csv      四个因子方案的逐月目标持仓
+yearly_returns.csv          分年度成本前后收益
+cost_sensitivity.csv        双因子在零成本、正常成本、双倍成本下的表现
+manifest.json               输入、配置、版本与限制
+```
+
+这是权重级研究回测，不是精确股票账户。缺少权威公司行动数据时，程序不会用原始价格
+伪造股数、分红现金和送转账务；待这些数据补齐后，再升级到逐日真实账户撮合。
+
 ## 月频多因子回测 Demo
 
 离线合成市场跑通 `月末决策 -> 因子与预处理 -> 目标组合 -> 次日开盘撮合 -> 每日估值 -> 绩效与 IC`：
